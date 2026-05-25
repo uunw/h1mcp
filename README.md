@@ -52,9 +52,17 @@ H1_API_KEY=your_api_key
 
 ### Docker (recommended)
 
+Pull and run directly from GitHub Container Registry:
+
+```sh
+docker pull ghcr.io/uunw/h1mcp
+docker run --rm -e H1_USERNAME=... -e H1_API_KEY=... ghcr.io/uunw/h1mcp
+```
+
+Or build locally:
+
 ```sh
 docker build -t h1mcp .
-docker run --rm -e H1_USERNAME=... -e H1_API_KEY=... h1mcp
 ```
 
 ### Manual build
@@ -68,13 +76,13 @@ cargo build --release
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-**Docker:**
+**Docker (recommended):**
 ```json
 {
   "mcpServers": {
     "hackerone": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "H1_USERNAME", "-e", "H1_API_KEY", "h1mcp"],
+      "args": ["run", "--rm", "-i", "ghcr.io/uunw/h1mcp"],
       "env": {
         "H1_USERNAME": "your_username",
         "H1_API_KEY": "your_api_key"
@@ -98,6 +106,24 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   }
 }
 ```
+
+### Claude Code (CLI)
+
+```sh
+# user scope (available in all projects)
+claude mcp add --scope user \
+  --env H1_USERNAME=your_username \
+  --env H1_API_KEY=your_api_key \
+  h1mcp -- docker run --rm -i ghcr.io/uunw/h1mcp
+
+# project scope (committed to .mcp.json, shared with team)
+claude mcp add --scope project \
+  --env H1_USERNAME=your_username \
+  --env H1_API_KEY=your_api_key \
+  h1mcp -- docker run --rm -i ghcr.io/uunw/h1mcp
+```
+
+Verify: `claude mcp list`
 
 ## Draft workflow
 

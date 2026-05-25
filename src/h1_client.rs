@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::time::Duration;
 
 const BASE_URL: &str = "https://api.hackerone.com/v1";
 
@@ -40,13 +41,44 @@ impl H1Client {
     }
 
     async fn exec<T: DeserializeOwned>(&self, rb: RequestBuilder) -> Result<T> {
-        let resp = rb.send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("H1 API error {status}: {body}");
+        const MAX_RETRIES: u32 = 3;
+        let mut attempt = 0u32;
+        loop {
+            let req = rb.try_clone().context("request body not retryable")?;
+            let resp = req.send().await?;
+            let status = resp.status();
+
+            if status == 429 {
+                let wait = resp
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(5);
+                if attempt < MAX_RETRIES {
+                    attempt += 1;
+                    tracing::warn!("rate limited, waiting {wait}s (attempt {attempt}/{MAX_RETRIES})");
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                    continue;
+                }
+                anyhow::bail!("H1 API rate limited after {MAX_RETRIES} retries");
+            }
+
+            if status.is_server_error() && attempt < MAX_RETRIES {
+                attempt += 1;
+                let wait = 2u64.pow(attempt);
+                tracing::warn!("server error {status}, retrying in {wait}s (attempt {attempt}/{MAX_RETRIES})");
+                tokio::time::sleep(Duration::from_secs(wait)).await;
+                continue;
+            }
+
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!("H1 API error {status}: {body}");
+            }
+
+            return Ok(resp.json::<T>().await?);
         }
-        Ok(resp.json::<T>().await?)
     }
 
     // ── Reports ──────────────────────────────────────────────────────────
