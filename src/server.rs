@@ -46,6 +46,8 @@ impl H1Server {
             p.severity.as_deref(),
             p.state.as_deref(),
             p.page_size,
+            p.page_number,
+            p.sort.as_deref(),
         ).await {
             Ok(v) => Self::ok(v),
             Err(e) => Self::err(e),
@@ -208,7 +210,7 @@ impl H1Server {
 
     #[tool(description = "Analyze patterns across your recent reports: severity distribution, state breakdown, top programs.")]
     async fn analyze_report_patterns(&self, Parameters(p): Parameters<PageSizeParam>) -> String {
-        match self.client.search_reports(None, None, None, None, p.page_size.or(Some(100))).await {
+        match self.client.search_reports(None, None, None, None, p.page_size.or(Some(100)), None, None).await {
             Ok(v) => {
                 let empty = vec![];
                 let data = v["data"].as_array().unwrap_or(&empty);

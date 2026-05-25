@@ -15,6 +15,10 @@ pub struct SearchReportsParams {
     pub state: Option<String>,
     /// Number of results (1-100, default 25)
     pub page_size: Option<u32>,
+    /// Page number for offset pagination (default 1)
+    pub page_number: Option<u32>,
+    /// Sort field, prefix with - for descending (e.g. "-reports.created_at")
+    pub sort: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]

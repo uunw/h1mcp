@@ -2,14 +2,18 @@ use anyhow::{Context, Result};
 use reqwest::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const BASE_URL: &str = "https://api.hackerone.com/v1";
+const CACHE_TTL: Duration = Duration::from_secs(60);
 
 pub struct H1Client {
     client: Client,
     username: String,
     api_key: String,
+    cache: Mutex<HashMap<String, (Value, Instant)>>,
 }
 
 impl H1Client {
@@ -22,12 +26,13 @@ impl H1Client {
             client: Client::new(),
             username,
             api_key,
+            cache: Mutex::new(HashMap::new()),
         })
     }
 
-    fn get(&self, path: &str) -> RequestBuilder {
+    fn auth_get(&self, url: &str) -> RequestBuilder {
         self.client
-            .get(format!("{BASE_URL}{path}"))
+            .get(url)
             .basic_auth(&self.username, Some(&self.api_key))
             .header("Accept", "application/json")
     }
@@ -81,6 +86,21 @@ impl H1Client {
         }
     }
 
+    // Cache-aware GET — key is the full URL.
+    async fn cached_get(&self, url: &str) -> Result<Value> {
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some((val, at)) = cache.get(url) {
+                if at.elapsed() < CACHE_TTL {
+                    return Ok(val.clone());
+                }
+            }
+        }
+        let val: Value = self.exec(self.auth_get(url)).await?;
+        self.cache.lock().unwrap().insert(url.to_string(), (val.clone(), Instant::now()));
+        Ok(val)
+    }
+
     // ── Reports ──────────────────────────────────────────────────────────
 
     pub async fn search_reports(
@@ -90,27 +110,27 @@ impl H1Client {
         severity: Option<&str>,
         state: Option<&str>,
         page_size: Option<u32>,
+        page_number: Option<u32>,
+        sort: Option<&str>,
     ) -> Result<Value> {
         let mut url = format!("{BASE_URL}/reports?");
         if let Some(k) = keyword { url.push_str(&format!("filter[keyword]={k}&")); }
         if let Some(p) = program { url.push_str(&format!("filter[program][]={p}&")); }
         if let Some(s) = severity { url.push_str(&format!("filter[severity][]={s}&")); }
         if let Some(st) = state { url.push_str(&format!("filter[state][]={st}&")); }
-        let size = page_size.unwrap_or(25).min(100);
-        url.push_str(&format!("page[size]={size}"));
-        let rb = self.client.get(&url)
-            .basic_auth(&self.username, Some(&self.api_key))
-            .header("Accept", "application/json");
-        self.exec(rb).await
+        if let Some(n) = page_number { url.push_str(&format!("page[number]={n}&")); }
+        if let Some(s) = sort { url.push_str(&format!("sort={s}&")); }
+        url.push_str(&format!("page[size]={}", page_size.unwrap_or(25).min(100)));
+        self.cached_get(&url).await
     }
 
     pub async fn get_report(&self, id: u64) -> Result<Value> {
-        self.exec(self.get(&format!("/reports/{id}"))).await
+        self.cached_get(&format!("{BASE_URL}/reports/{id}")).await
     }
 
     pub async fn get_report_activities(&self, id: u64, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25);
-        self.exec(self.get(&format!("/reports/{id}/activities?page[size]={size}"))).await
+        self.cached_get(&format!("{BASE_URL}/reports/{id}/activities?page[size]={size}")).await
     }
 
     pub async fn submit_report(&self, body: Value) -> Result<Value> {
@@ -121,10 +141,7 @@ impl H1Client {
         let body = serde_json::json!({
             "data": {
                 "type": "activity-comment",
-                "attributes": {
-                    "message": message,
-                    "internal": internal
-                }
+                "attributes": { "message": message, "internal": internal }
             }
         });
         self.exec(self.post(&format!("/reports/{id}/activities")).json(&body)).await
@@ -143,18 +160,13 @@ impl H1Client {
     pub async fn update_severity(&self, id: u64, rating: &str, score: Option<f64>) -> Result<Value> {
         let mut attrs = serde_json::json!({ "rating": rating });
         if let Some(s) = score { attrs["score"] = s.into(); }
-        let body = serde_json::json!({
-            "data": { "type": "severity", "attributes": attrs }
-        });
+        let body = serde_json::json!({ "data": { "type": "severity", "attributes": attrs } });
         self.exec(self.post(&format!("/reports/{id}/severities")).json(&body)).await
     }
 
     pub async fn request_disclosure(&self, id: u64, kind: &str) -> Result<Value> {
         let body = serde_json::json!({
-            "data": {
-                "type": "disclosure-request",
-                "attributes": { "type": kind }
-            }
+            "data": { "type": "disclosure-request", "attributes": { "type": kind } }
         });
         self.exec(self.post(&format!("/reports/{id}/disclosure_requests")).json(&body)).await
     }
@@ -168,10 +180,7 @@ impl H1Client {
         loop {
             let mut url = format!("{BASE_URL}/hackers/programs?page[size]={size}");
             if let Some(ref c) = cursor { url.push_str(&format!("&page[cursor]={c}")); }
-            let rb = self.client.get(&url)
-                .basic_auth(&self.username, Some(&self.api_key))
-                .header("Accept", "application/json");
-            let resp: Value = self.exec(rb).await?;
+            let resp: Value = self.cached_get(&url).await?;
             if let Some(data) = resp["data"].as_array() {
                 all_data.extend(data.clone());
             }
@@ -184,32 +193,32 @@ impl H1Client {
     }
 
     pub async fn get_program(&self, handle: &str) -> Result<Value> {
-        self.exec(self.get(&format!("/programs/{handle}"))).await
+        self.cached_get(&format!("{BASE_URL}/programs/{handle}")).await
     }
 
     pub async fn get_program_scope(&self, handle: &str, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25).min(100);
-        self.exec(self.get(&format!("/programs/{handle}/structured_scopes?page[size]={size}"))).await
+        self.cached_get(&format!("{BASE_URL}/programs/{handle}/structured_scopes?page[size]={size}")).await
     }
 
     pub async fn get_program_weaknesses(&self, handle: &str, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(100).min(100);
-        self.exec(self.get(&format!("/programs/{handle}/weaknesses?page[size]={size}"))).await
+        self.cached_get(&format!("{BASE_URL}/programs/{handle}/weaknesses?page[size]={size}")).await
     }
 
     // ── Hacker ───────────────────────────────────────────────────────────
 
     pub async fn get_profile(&self) -> Result<Value> {
-        self.exec(self.get("/hackers/me")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/me")).await
     }
 
     pub async fn get_balance(&self) -> Result<Value> {
-        self.exec(self.get("/hackers/me/payments")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/me/payments")).await
     }
 
     pub async fn get_earnings(&self, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25).min(100);
-        self.exec(self.get(&format!("/hackers/me/payments?page[size]={size}"))).await
+        self.cached_get(&format!("{BASE_URL}/hackers/me/payments?page[size]={size}")).await
     }
 
     // ── Hacktivity ───────────────────────────────────────────────────────
@@ -219,9 +228,6 @@ impl H1Client {
         let mut url = format!("{BASE_URL}/hacktivity?page[size]={size}");
         if let Some(q) = query { url.push_str(&format!("&filter[keyword]={q}")); }
         if let Some(p) = program { url.push_str(&format!("&filter[program][]={p}")); }
-        let rb = self.client.get(&url)
-            .basic_auth(&self.username, Some(&self.api_key))
-            .header("Accept", "application/json");
-        self.exec(rb).await
+        self.cached_get(&url).await
     }
 }
