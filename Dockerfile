@@ -1,5 +1,6 @@
 FROM rust:alpine AS builder
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconf
+# rustls (not OpenSSL) is used for TLS — only a C toolchain is needed for ring.
+RUN apk add --no-cache musl-dev
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 RUN mkdir src && echo 'fn main(){}' > src/main.rs && cargo build --release 2>/dev/null; rm -rf src
