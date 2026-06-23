@@ -178,6 +178,29 @@ impl H1Client {
         self.exec(self.post(&format!("/reports/{id}/disclosure_requests")).json(&body)).await
     }
 
+    // ── Report intents (hacker API) ──────────────────────────────────────
+    // A report intent is the first step of the assisted submission flow: you
+    // send a free-text description and HackerOne's assistant pre-validates it.
+
+    pub async fn create_report_intent(&self, team_handle: &str, description: &str) -> Result<Value> {
+        let body = serde_json::json!({
+            "data": {
+                "type": "report-intent",
+                "attributes": { "team_handle": team_handle, "description": description }
+            }
+        });
+        self.exec(self.post("/hackers/report_intents").json(&body)).await
+    }
+
+    pub async fn list_report_intents(&self, page_size: Option<u32>) -> Result<Value> {
+        let size = page_size.unwrap_or(25).min(100);
+        self.cached_get(&format!("{BASE_URL}/hackers/report_intents?page[size]={size}")).await
+    }
+
+    pub async fn get_report_intent(&self, id: u64) -> Result<Value> {
+        self.cached_get(&format!("{BASE_URL}/hackers/report_intents/{id}")).await
+    }
+
     // ── Programs ─────────────────────────────────────────────────────────
 
     pub async fn list_programs(&self, page_size: Option<u32>) -> Result<Value> {
@@ -213,10 +236,55 @@ impl H1Client {
         self.cached_get(&format!("{BASE_URL}/hackers/programs/{handle}/weaknesses?page[size]={size}")).await
     }
 
+    // Bundle the IDs needed to submit a report to a program: submittable
+    // structured scopes (structured_scope_id) and accepted weaknesses (weakness_id).
+    pub async fn get_submission_options(&self, handle: &str) -> Result<Value> {
+        let (scopes, weaknesses) = tokio::join!(
+            self.get_program_scope(handle, Some(100)),
+            self.get_program_weaknesses(handle, Some(100)),
+        );
+        let scopes = scopes?;
+        let weaknesses = weaknesses?;
+        let empty = vec![];
+        let scope_opts: Vec<Value> = scopes["data"].as_array().unwrap_or(&empty).iter()
+            .filter(|s| s["attributes"]["eligible_for_submission"].as_bool().unwrap_or(false))
+            .map(|s| serde_json::json!({
+                "structured_scope_id": s["id"],
+                "asset_identifier": s["attributes"]["asset_identifier"],
+                "asset_type": s["attributes"]["asset_type"],
+                "eligible_for_bounty": s["attributes"]["eligible_for_bounty"],
+            }))
+            .collect();
+        let weakness_opts: Vec<Value> = weaknesses["data"].as_array().unwrap_or(&empty).iter()
+            .map(|w| serde_json::json!({
+                "weakness_id": w["id"],
+                "name": w["attributes"]["name"],
+            }))
+            .collect();
+        Ok(serde_json::json!({
+            "program": handle,
+            "structured_scopes": scope_opts,
+            "weaknesses": weakness_opts,
+        }))
+    }
+
     // ── Hacker ───────────────────────────────────────────────────────────
 
+    // The hacker API has no standalone self-profile endpoint (/hackers/me -> 401).
+    // Derive identity from the reporter object embedded in your own reports.
     pub async fn get_profile(&self) -> Result<Value> {
-        self.cached_get(&format!("{BASE_URL}/hackers/me")).await
+        let reports = self
+            .cached_get(&format!("{BASE_URL}/hackers/me/reports?page[size]=1"))
+            .await?;
+        let reporter = &reports["data"][0]["relationships"]["reporter"]["data"];
+        if reporter.is_object() {
+            Ok(reporter.clone())
+        } else {
+            anyhow::bail!(
+                "Profile is not exposed by the hacker API; it can only be derived \
+                 from an existing report, and you have no reports yet."
+            )
+        }
     }
 
     pub async fn get_balance(&self) -> Result<Value> {

@@ -32,11 +32,15 @@ Use it to run your bug bounty workflow with an AI assistant: search and triage y
 | `close_report` | Close/withdraw a report |
 | `update_report_severity` | Update severity rating |
 | `request_disclosure` | Request public disclosure |
+| `create_report_intent` | Send a free-text vuln description for HackerOne's assistant to pre-validate before a full report |
+| `list_report_intents` | List your report intents and their assistant status |
+| `get_report_intent` | Get one report intent (assistant response + job status) |
 | `list_programs` | List programs you have access to |
 | `get_program_details` | Full program details |
 | `get_program_scope` | In-scope assets |
 | `get_program_weaknesses` | Accepted CWE types |
-| `get_hacker_profile` | Your profile (signal, reputation, impact) |
+| `get_submission_options` | Submittable scope IDs + weakness IDs for a program, in one call |
+| `get_hacker_profile` | Your identity (username/name/bio) derived from your reports |
 | `get_balance` | Current payout balance |
 | `get_earnings` | Earnings history |
 | `search_disclosed_reports` | Search hacktivity (public disclosed reports) |
@@ -151,6 +155,9 @@ Drafts are stored in `~/.config/h1mcp/drafts/` as JSON files.
 h1mcp talks to the HackerOne **hacker API** under `https://api.hackerone.com/v1/hackers/`,
 authenticating with HTTP Basic auth (`H1_USERNAME:H1_API_KEY`). Responses are cached
 briefly in-process, and rate-limit (`429`) and server errors are retried with backoff.
+
+Tool output is optimized for LLM token cost: results are pruned of null fields,
+empty containers, and avatar URLs, then serialized as compact (non-pretty) JSON.
 
 ## License
 

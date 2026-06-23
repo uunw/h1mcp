@@ -11,6 +11,32 @@ use crate::drafts;
 use crate::h1_client::H1Client;
 use crate::params::*;
 
+/// Recursively drop nulls, empty containers, and known-noise keys to reduce the
+/// token cost of tool output. Lossless for anything an LLM needs (absence of a
+/// field reads the same as an explicit null).
+fn prune(v: &Value) -> Value {
+    const NOISE_KEYS: &[&str] = &["profile_picture"];
+    match v {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, val) in map {
+                if NOISE_KEYS.contains(&k.as_str()) || val.is_null() {
+                    continue;
+                }
+                let pv = prune(val);
+                let empty = matches!(&pv, Value::Array(a) if a.is_empty())
+                    || matches!(&pv, Value::Object(o) if o.is_empty());
+                if !empty {
+                    out.insert(k.clone(), pv);
+                }
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(prune).collect()),
+        _ => v.clone(),
+    }
+}
+
 #[derive(Clone)]
 pub struct H1Server {
     client: Arc<H1Client>,
@@ -25,8 +51,11 @@ impl H1Server {
         }
     }
 
+    // Token-efficient output: prune noise, then serialize compact (no pretty
+    // whitespace). The result is consumed by an LLM, not a human, so dropping
+    // null/empty fields and avatar URLs cuts input tokens with no real loss.
     fn ok(v: Value) -> String {
-        serde_json::to_string_pretty(&v).unwrap_or_else(|e| format!("serialize error: {e}"))
+        serde_json::to_string(&prune(&v)).unwrap_or_else(|e| format!("serialize error: {e}"))
     }
 
     fn err(e: anyhow::Error) -> String {
@@ -138,6 +167,32 @@ impl H1Server {
         }
     }
 
+    // ── Report intents ────────────────────────────────────────────────────
+
+    #[tool(description = "Create a report intent: send a free-text vulnerability description to a program and have HackerOne's assistant pre-validate it before filing a full report. The first step of assisted submission.")]
+    async fn create_report_intent(&self, Parameters(p): Parameters<CreateReportIntentParams>) -> String {
+        match self.client.create_report_intent(&p.program_handle, &p.description).await {
+            Ok(v) => Self::ok(v),
+            Err(e) => Self::err(e),
+        }
+    }
+
+    #[tool(description = "List your report intents (assisted-submission drafts) and their assistant status.")]
+    async fn list_report_intents(&self, Parameters(p): Parameters<PageSizeParam>) -> String {
+        match self.client.list_report_intents(p.page_size).await {
+            Ok(v) => Self::ok(v),
+            Err(e) => Self::err(e),
+        }
+    }
+
+    #[tool(description = "Get a single report intent by ID, including the assistant_response and job status. Poll this after create_report_intent.")]
+    async fn get_report_intent(&self, Parameters(p): Parameters<ReportIntentIdParam>) -> String {
+        match self.client.get_report_intent(p.report_intent_id).await {
+            Ok(v) => Self::ok(v),
+            Err(e) => Self::err(e),
+        }
+    }
+
     // ── Programs ──────────────────────────────────────────────────────────
 
     #[tool(description = "List all HackerOne programs you have access to (auto-paginated).")]
@@ -172,9 +227,17 @@ impl H1Server {
         }
     }
 
+    #[tool(description = "Get everything needed to submit to a program in one call: submittable structured_scope_id options and accepted weakness_id options. Use before submit_report or draft_report.")]
+    async fn get_submission_options(&self, Parameters(p): Parameters<ProgramHandleParam>) -> String {
+        match self.client.get_submission_options(&p.program_handle).await {
+            Ok(v) => Self::ok(v),
+            Err(e) => Self::err(e),
+        }
+    }
+
     // ── Hacker profile ────────────────────────────────────────────────────
 
-    #[tool(description = "Get your HackerOne hacker profile (username, reputation, signal, impact).")]
+    #[tool(description = "Get your hacker identity (username, name, bio) derived from your reports. Note: the hacker API has no standalone profile endpoint, so reputation/signal/impact are not available and this returns nothing if you have no reports.")]
     async fn get_hacker_profile(&self) -> String {
         match self.client.get_profile().await {
             Ok(v) => Self::ok(v),
@@ -322,7 +385,7 @@ impl H1Server {
     }
 }
 
-#[tool_handler(name = "h1mcp", version = "0.1.2", router = self.tool_router)]
+#[tool_handler(name = "h1mcp", version = "0.1.3", router = self.tool_router)]
 impl ServerHandler for H1Server {}
 
 pub async fn run() -> Result<()> {

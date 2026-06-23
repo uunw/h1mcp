@@ -75,6 +75,23 @@ pub struct RequestDisclosureParams {
     pub kind: Option<String>,
 }
 
+// ── Report intent params ────────────────────────────────────────────────────────
+
+#[derive(Deserialize, JsonSchema)]
+pub struct CreateReportIntentParams {
+    /// Program/team handle to report to (e.g. "anthropic")
+    pub program_handle: String,
+    /// Free-text vulnerability description incl. reproduction steps; the
+    /// HackerOne assistant pre-validates it before a full report is filed
+    pub description: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ReportIntentIdParam {
+    /// Report intent ID (from list_report_intents)
+    pub report_intent_id: u64,
+}
+
 // ── Program params ────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, JsonSchema)]
