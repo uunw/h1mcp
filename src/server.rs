@@ -77,7 +77,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Get the activity timeline (comments, state changes, bounty awards) for a report.")]
+    #[tool(description = "Get the activity timeline (comments, state changes, bounty awards) for a report. Note: the hacker API returns activities nested inside get_report; this standalone call uses the program API and needs a program-scoped token.")]
     async fn get_report_activities(&self, Parameters(p): Parameters<ReportActivitiesParam>) -> String {
         match self.client.get_report_activities(p.report_id, p.page_size).await {
             Ok(v) => Self::ok(v),
@@ -105,7 +105,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Add a comment to a HackerOne report. Set internal=true for team-only notes.")]
+    #[tool(description = "Add a comment to a HackerOne report. Set internal=true for team-only notes. Requires a program-scoped API token (not part of the hacker API).")]
     async fn add_comment(&self, Parameters(p): Parameters<AddCommentParams>) -> String {
         match self.client.add_comment(p.report_id, &p.message, p.internal.unwrap_or(false)).await {
             Ok(v) => Self::ok(v),
@@ -113,7 +113,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Close/withdraw a HackerOne report with an optional message.")]
+    #[tool(description = "Close/withdraw a HackerOne report with an optional message. Requires a program-scoped API token (not part of the hacker API).")]
     async fn close_report(&self, Parameters(p): Parameters<CloseReportParams>) -> String {
         match self.client.close_report(p.report_id, &p.message).await {
             Ok(v) => Self::ok(v),
@@ -121,7 +121,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Update the severity rating of a report. Rating: none, low, medium, high, critical.")]
+    #[tool(description = "Update the severity rating of a report. Rating: none, low, medium, high, critical. Requires a program-scoped API token (not part of the hacker API).")]
     async fn update_report_severity(&self, Parameters(p): Parameters<UpdateSeverityParams>) -> String {
         match self.client.update_severity(p.report_id, &p.rating, p.score).await {
             Ok(v) => Self::ok(v),
@@ -129,7 +129,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Request public disclosure for a resolved report. Kind: 'full' (default) or 'limited'.")]
+    #[tool(description = "Request public disclosure for a resolved report. Kind: 'full' (default) or 'limited'. Requires a program-scoped API token (not part of the hacker API).")]
     async fn request_disclosure(&self, Parameters(p): Parameters<RequestDisclosureParams>) -> String {
         let kind = p.kind.as_deref().unwrap_or("full");
         match self.client.request_disclosure(p.report_id, kind).await {
@@ -322,7 +322,7 @@ impl H1Server {
     }
 }
 
-#[tool_handler(name = "h1mcp", version = "0.1.1", router = self.tool_router)]
+#[tool_handler(name = "h1mcp", version = "0.1.2", router = self.tool_router)]
 impl ServerHandler for H1Server {}
 
 pub async fn run() -> Result<()> {

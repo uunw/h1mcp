@@ -1,6 +1,6 @@
 [package]
 name = "h1mcp"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "HackerOne MCP server — full API coverage + local draft management"
 license = "MIT"

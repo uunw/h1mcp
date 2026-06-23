@@ -113,7 +113,8 @@ impl H1Client {
         page_number: Option<u32>,
         sort: Option<&str>,
     ) -> Result<Value> {
-        let mut url = format!("{BASE_URL}/reports?");
+        // Hacker API exposes only your own reports, under /hackers/me/reports.
+        let mut url = format!("{BASE_URL}/hackers/me/reports?");
         if let Some(k) = keyword { url.push_str(&format!("filter[keyword]={k}&")); }
         if let Some(p) = program { url.push_str(&format!("filter[program][]={p}&")); }
         if let Some(s) = severity { url.push_str(&format!("filter[severity][]={s}&")); }
@@ -128,15 +129,21 @@ impl H1Client {
         self.cached_get(&format!("{BASE_URL}/hackers/reports/{id}")).await
     }
 
+    // NOTE: The hacker API has no standalone activities endpoint — activities are
+    // returned nested inside a report (GET /hackers/reports/{id}, see get_report).
+    // This path is the customer/program API and requires a program-scoped token.
     pub async fn get_report_activities(&self, id: u64, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25);
-        self.cached_get(&format!("{BASE_URL}/hackers/reports/{id}/activities?page[size]={size}")).await
+        self.cached_get(&format!("{BASE_URL}/reports/{id}/activities?page[size]={size}")).await
     }
 
     pub async fn submit_report(&self, body: Value) -> Result<Value> {
-        self.exec(self.post("/reports").json(&body)).await
+        self.exec(self.post("/hackers/reports").json(&body)).await
     }
 
+    // NOTE: add_comment / close_report / update_severity / request_disclosure are
+    // customer/program API operations. They are not part of the hacker API and
+    // require a program-scoped token; with a hacker token they return 401.
     pub async fn add_comment(&self, id: u64, message: &str, internal: bool) -> Result<Value> {
         let body = serde_json::json!({
             "data": {
@@ -213,12 +220,12 @@ impl H1Client {
     }
 
     pub async fn get_balance(&self) -> Result<Value> {
-        self.cached_get(&format!("{BASE_URL}/hackers/me/payments")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/payments/balance")).await
     }
 
     pub async fn get_earnings(&self, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25).min(100);
-        self.cached_get(&format!("{BASE_URL}/hackers/me/payments?page[size]={size}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/payments/earnings?page[size]={size}")).await
     }
 
     // ── Hacktivity ───────────────────────────────────────────────────────

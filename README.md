@@ -4,7 +4,7 @@
 [![Build and push Docker image](https://github.com/uunw/h1mcp/actions/workflows/docker.yml/badge.svg)](https://github.com/uunw/h1mcp/actions/workflows/docker.yml)
 [![Container](https://img.shields.io/badge/ghcr.io-uunw%2Fh1mcp-2496ED?logo=docker&logoColor=white)](https://github.com/uunw/h1mcp/pkgs/container/h1mcp)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/github/license/uunw/h1mcp)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 **h1mcp** is a [HackerOne](https://hackerone.com) [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server written in Rust. It exposes the full HackerOne API — reports, programs, scope, weaknesses, payouts, and hacktivity — plus local draft management as MCP tools you can drive from **Claude Desktop**, **Claude Code**, or any MCP-compatible client.
 
