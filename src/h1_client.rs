@@ -125,12 +125,12 @@ impl H1Client {
     }
 
     pub async fn get_report(&self, id: u64) -> Result<Value> {
-        self.cached_get(&format!("{BASE_URL}/reports/{id}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/reports/{id}")).await
     }
 
     pub async fn get_report_activities(&self, id: u64, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25);
-        self.cached_get(&format!("{BASE_URL}/reports/{id}/activities?page[size]={size}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/reports/{id}/activities?page[size]={size}")).await
     }
 
     pub async fn submit_report(&self, body: Value) -> Result<Value> {
@@ -193,17 +193,17 @@ impl H1Client {
     }
 
     pub async fn get_program(&self, handle: &str) -> Result<Value> {
-        self.cached_get(&format!("{BASE_URL}/programs/{handle}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/programs/{handle}")).await
     }
 
     pub async fn get_program_scope(&self, handle: &str, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25).min(100);
-        self.cached_get(&format!("{BASE_URL}/programs/{handle}/structured_scopes?page[size]={size}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/programs/{handle}/structured_scopes?page[size]={size}")).await
     }
 
     pub async fn get_program_weaknesses(&self, handle: &str, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(100).min(100);
-        self.cached_get(&format!("{BASE_URL}/programs/{handle}/weaknesses?page[size]={size}")).await
+        self.cached_get(&format!("{BASE_URL}/hackers/programs/{handle}/weaknesses?page[size]={size}")).await
     }
 
     // ── Hacker ───────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ impl H1Client {
 
     pub async fn search_disclosed(&self, query: Option<&str>, program: Option<&str>, page_size: Option<u32>) -> Result<Value> {
         let size = page_size.unwrap_or(25).min(100);
-        let mut url = format!("{BASE_URL}/hacktivity?page[size]={size}");
+        let mut url = format!("{BASE_URL}/hackers/hacktivity?page[size]={size}");
         if let Some(q) = query { url.push_str(&format!("&filter[keyword]={q}")); }
         if let Some(p) = program { url.push_str(&format!("&filter[program][]={p}")); }
         self.cached_get(&url).await

@@ -322,7 +322,7 @@ impl H1Server {
     }
 }
 
-#[tool_handler(name = "h1mcp", version = "0.1.0", router = self.tool_router)]
+#[tool_handler(name = "h1mcp", version = "0.1.1", router = self.tool_router)]
 impl ServerHandler for H1Server {}
 
 pub async fn run() -> Result<()> {
