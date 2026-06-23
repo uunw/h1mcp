@@ -299,10 +299,85 @@ impl H1Client {
     // ── Hacktivity ───────────────────────────────────────────────────────
 
     pub async fn search_disclosed(&self, query: Option<&str>, program: Option<&str>, page_size: Option<u32>) -> Result<Value> {
-        let size = page_size.unwrap_or(25).min(100);
-        let mut url = format!("{BASE_URL}/hackers/hacktivity?page[size]={size}");
-        if let Some(q) = query { url.push_str(&format!("&filter[keyword]={q}")); }
-        if let Some(p) = program { url.push_str(&format!("&filter[program][]={p}")); }
-        self.cached_get(&url).await
+        self.cached_get(&hacktivity_url(query, program, page_size)).await
+    }
+}
+
+// ── Hacktivity URL builder ───────────────────────────────────────────────
+// The hacktivity endpoint does NOT accept JSON-API `filter[...]` params (those
+// belong to /reports). It takes a single Apache Lucene `queryString`: filter a
+// program with `team:<handle>`, while a bare term is a full-text keyword search.
+// Unknown params are silently ignored — which is why the old `filter[program][]`
+// returned the unfiltered global feed. Values are URL-encoded by `url` crate.
+// Ref: https://api.hackerone.com/hacker-resources (GET /hackers/hacktivity)
+fn hacktivity_url(query: Option<&str>, program: Option<&str>, page_size: Option<u32>) -> String {
+    let size = page_size.unwrap_or(25).min(100);
+    let mut clauses: Vec<String> = Vec::new();
+    if let Some(p) = program {
+        clauses.push(format!("team:{p}"));
+    }
+    if let Some(q) = query.map(str::trim).filter(|q| !q.is_empty()) {
+        // Group the keyword so multi-word input stays intact when AND-combined.
+        clauses.push(if clauses.is_empty() { q.to_string() } else { format!("({q})") });
+    }
+    let mut params: Vec<(&str, String)> = vec![("page[size]", size.to_string())];
+    if !clauses.is_empty() {
+        params.push(("queryString", clauses.join(" AND ")));
+    }
+    url::Url::parse_with_params(&format!("{BASE_URL}/hackers/hacktivity"), &params)
+        .expect("hacktivity base URL is valid")
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Decode a single query param back to its logical value (handles `+`/`%XX`).
+    fn qs(url: &str, key: &str) -> Option<String> {
+        url::Url::parse(url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+    }
+
+    #[test]
+    fn program_filter_uses_team_lucene_field() {
+        let url = hacktivity_url(None, Some("unico_idtech"), None);
+        assert_eq!(qs(&url, "queryString").as_deref(), Some("team:unico_idtech"));
+        // Regression guard: the old broken JSON-API filter must never reappear.
+        assert!(!url.contains("filter"), "must not emit filter[] params: {url}");
+    }
+
+    #[test]
+    fn keyword_only_is_bare_term() {
+        let url = hacktivity_url(Some("idor"), None, None);
+        assert_eq!(qs(&url, "queryString").as_deref(), Some("idor"));
+    }
+
+    #[test]
+    fn program_and_keyword_anded_and_grouped() {
+        let url = hacktivity_url(Some("sql injection"), Some("curl"), None);
+        assert_eq!(qs(&url, "queryString").as_deref(), Some("team:curl AND (sql injection)"));
+    }
+
+    #[test]
+    fn blank_keyword_ignored() {
+        let url = hacktivity_url(Some("   "), None, None);
+        assert_eq!(qs(&url, "queryString"), None);
+    }
+
+    #[test]
+    fn page_size_clamped_to_100() {
+        let url = hacktivity_url(None, None, Some(9999));
+        assert_eq!(qs(&url, "page[size]").as_deref(), Some("100"));
+    }
+
+    #[test]
+    fn default_page_size_and_no_query() {
+        let url = hacktivity_url(None, None, None);
+        assert_eq!(qs(&url, "page[size]").as_deref(), Some("25"));
+        assert_eq!(qs(&url, "queryString"), None);
     }
 }
