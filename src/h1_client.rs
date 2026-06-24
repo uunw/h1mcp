@@ -129,12 +129,11 @@ impl H1Client {
         self.cached_get(&format!("{BASE_URL}/hackers/reports/{id}")).await
     }
 
-    // NOTE: The hacker API has no standalone activities endpoint — activities are
-    // returned nested inside a report (GET /hackers/reports/{id}, see get_report).
-    // This path is the customer/program API and requires a program-scoped token.
-    pub async fn get_report_activities(&self, id: u64, page_size: Option<u32>) -> Result<Value> {
-        let size = page_size.unwrap_or(25);
-        self.cached_get(&format!("{BASE_URL}/reports/{id}/activities?page[size]={size}")).await
+    // The hacker API has no standalone activities endpoint — activities are
+    // nested inside GET /hackers/reports/{id}. Extract them from the report.
+    pub async fn get_report_activities(&self, id: u64, _page_size: Option<u32>) -> Result<Value> {
+        let report = self.get_report(id).await?;
+        Ok(report["data"]["relationships"]["activities"].clone())
     }
 
     pub async fn submit_report(&self, body: Value) -> Result<Value> {
@@ -144,38 +143,37 @@ impl H1Client {
     // NOTE: add_comment / close_report / update_severity / request_disclosure are
     // customer/program API operations. They are not part of the hacker API and
     // require a program-scoped token; with a hacker token they return 401.
-    pub async fn add_comment(&self, id: u64, message: &str, internal: bool) -> Result<Value> {
-        let body = serde_json::json!({
-            "data": {
-                "type": "activity-comment",
-                "attributes": { "message": message, "internal": internal }
-            }
-        });
-        self.exec(self.post(&format!("/reports/{id}/activities")).json(&body)).await
+    // These methods return a descriptive error immediately rather than hitting the API.
+    pub async fn add_comment(&self, id: u64, _message: &str, _internal: bool) -> Result<Value> {
+        anyhow::bail!(
+            "add_comment is not supported by the HackerOne hacker API. \
+             To add a comment to report #{id}, visit https://hackerone.com/reports/{id} \
+             and use the web interface."
+        )
     }
 
-    pub async fn close_report(&self, id: u64, message: &str) -> Result<Value> {
-        let body = serde_json::json!({
-            "data": {
-                "type": "activity-close-report",
-                "attributes": { "message": message }
-            }
-        });
-        self.exec(self.post(&format!("/reports/{id}/activities")).json(&body)).await
+    pub async fn close_report(&self, id: u64, _message: &str) -> Result<Value> {
+        anyhow::bail!(
+            "close_report is not supported by the HackerOne hacker API. \
+             To close report #{id}, visit https://hackerone.com/reports/{id} \
+             and use the web interface."
+        )
     }
 
-    pub async fn update_severity(&self, id: u64, rating: &str, score: Option<f64>) -> Result<Value> {
-        let mut attrs = serde_json::json!({ "rating": rating });
-        if let Some(s) = score { attrs["score"] = s.into(); }
-        let body = serde_json::json!({ "data": { "type": "severity", "attributes": attrs } });
-        self.exec(self.post(&format!("/reports/{id}/severities")).json(&body)).await
+    pub async fn update_severity(&self, id: u64, _rating: &str, _score: Option<f64>) -> Result<Value> {
+        anyhow::bail!(
+            "update_report_severity is not supported by the HackerOne hacker API. \
+             To update severity for report #{id}, visit https://hackerone.com/reports/{id} \
+             and use the web interface."
+        )
     }
 
-    pub async fn request_disclosure(&self, id: u64, kind: &str) -> Result<Value> {
-        let body = serde_json::json!({
-            "data": { "type": "disclosure-request", "attributes": { "type": kind } }
-        });
-        self.exec(self.post(&format!("/reports/{id}/disclosure_requests")).json(&body)).await
+    pub async fn request_disclosure(&self, id: u64, _kind: &str) -> Result<Value> {
+        anyhow::bail!(
+            "request_disclosure is not supported by the HackerOne hacker API. \
+             To request disclosure for report #{id}, visit https://hackerone.com/reports/{id} \
+             and use the web interface."
+        )
     }
 
     // ── Report intents (hacker API) ──────────────────────────────────────

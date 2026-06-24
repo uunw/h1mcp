@@ -91,22 +91,15 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Get a report bundled with its full triage conversation and activity timeline.")]
+    #[tool(description = "Get a report bundled with its full triage conversation and activity timeline. Activities are returned nested inside the report by the hacker API.")]
     async fn get_report_with_conversation(&self, Parameters(p): Parameters<ReportIdParam>) -> String {
-        let (r, a) = tokio::join!(
-            self.client.get_report(p.report_id),
-            self.client.get_report_activities(p.report_id, Some(100)),
-        );
-        match (r, a) {
-            (Ok(report), Ok(activities)) => Self::ok(serde_json::json!({
-                "report": report,
-                "activities": activities
-            })),
-            (Err(e), _) | (_, Err(e)) => Self::err(e),
+        match self.client.get_report(p.report_id).await {
+            Ok(report) => Self::ok(report),
+            Err(e) => Self::err(e),
         }
     }
 
-    #[tool(description = "Get the activity timeline (comments, state changes, bounty awards) for a report. Note: the hacker API returns activities nested inside get_report; this standalone call uses the program API and needs a program-scoped token.")]
+    #[tool(description = "Get the activity timeline (comments, state changes, bounty awards) for a report. Activities are extracted from the nested report data returned by the hacker API.")]
     async fn get_report_activities(&self, Parameters(p): Parameters<ReportActivitiesParam>) -> String {
         match self.client.get_report_activities(p.report_id, p.page_size).await {
             Ok(v) => Self::ok(v),
@@ -134,7 +127,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Add a comment to a HackerOne report. Set internal=true for team-only notes. Requires a program-scoped API token (not part of the hacker API).")]
+    #[tool(description = "Add a comment to a HackerOne report. Not supported by the hacker API — returns a helpful error with a link to the report's web interface.")]
     async fn add_comment(&self, Parameters(p): Parameters<AddCommentParams>) -> String {
         match self.client.add_comment(p.report_id, &p.message, p.internal.unwrap_or(false)).await {
             Ok(v) => Self::ok(v),
@@ -142,7 +135,7 @@ impl H1Server {
         }
     }
 
-    #[tool(description = "Close/withdraw a HackerOne report with an optional message. Requires a program-scoped API token (not part of the hacker API).")]
+    #[tool(description = "Close/withdraw a HackerOne report with an optional message. Not supported by the hacker API — returns a helpful error with a link to the report's web interface.")]
     async fn close_report(&self, Parameters(p): Parameters<CloseReportParams>) -> String {
         match self.client.close_report(p.report_id, &p.message).await {
             Ok(v) => Self::ok(v),
@@ -385,7 +378,7 @@ impl H1Server {
     }
 }
 
-#[tool_handler(name = "h1mcp", version = "0.1.4", router = self.tool_router)]
+#[tool_handler(name = "h1mcp", version = "0.1.5", router = self.tool_router)]
 impl ServerHandler for H1Server {}
 
 pub async fn run() -> Result<()> {

@@ -17,8 +17,9 @@ A **hacker token** only works under `/v1/hackers/*`. The customer/program API
 - submit: `POST /v1/hackers/reports`; assisted: `POST /v1/hackers/report_intents`
 - money: `/v1/hackers/payments/balance` and `/payments/earnings` (**NOT** `/hackers/me/payments` → 401)
 - `/v1/hackers/me` (self profile) → **401**; derive identity from the reporter object in your reports.
-- **Not in the hacker API** (need a program token): add comment, close report, update severity,
-  request disclosure, standalone activities, CVE requests, bounty suggestions.
+- **Not in the hacker API**: add comment, close report, update severity, request disclosure —
+  these tools return a descriptive error with a link to the web interface instead of a cryptic 401.
+- `get_report_activities` extracts activities from the nested `get_report` response (no separate API call).
 - Probe a write endpoint safely: POST an invalid body → **400** = endpoint+auth OK (no side effect).
 
 ## Build / release
